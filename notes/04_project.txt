@@ -1,0 +1,4 @@
+2025. 12. 05.
+src\engines\audio\metronome.py
+
+Metronome이 first, onbeat, sub-note만 출력되도록 했다.

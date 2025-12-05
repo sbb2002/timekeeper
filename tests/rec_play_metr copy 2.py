@@ -225,10 +225,10 @@ class DynamicPlotter(QMainWindow, PrintHandler):
                              nperseg=256,
                              )
             mag = np.abs(zxx)
-            log_mag = 20 * np.log10(mag + 1e-6)
+            mag = 20 * np.log10(mag + 1e-6)
             
             # self.hist.setImageItem(self.img)
-            self.img.setImage(log_mag.T)
+            self.img.setImage(mag.T)
 
         except Exception as e:
             self.prtwl("STFT ", e)

@@ -9,15 +9,15 @@ class RecordWorker(PrintHandler):
     """Worker class for recording guitar sound as input.
     
     **Arguments**
-    * `samplerate` -- Samples per a second. Default is `44100`.
-    * `blocksize` -- Samples per a block. Default is `1024`.
-    * `channels` -- Recording channel. Default is `1` as mono.
-    * `device` -- Input device. Default is `None` as auto-selection.
+    * `samplerate`  -- Samples per a second. Default is `44100`.
+    * `blocksize`   -- Samples per a block. Default is `1024`.
+    * `channels`    -- Recording channel. Default is `1` as mono.
+    * `device`      -- Input device. Default is `None` as auto-selection.
     
     
     **Example**
     
-    * `thread`
+    * How to start?
     
     This contains the recording thread.
     You can handle thread like this.
@@ -28,7 +28,7 @@ class RecordWorker(PrintHandler):
     >>> worker.thread.close()
     
     
-    * `audio_buffer`
+    * How to get recording data from `audio_buffer`?
     
     Also, you can use audio buffer as `Queue`.
     If using, you should get all in the buffer. 
