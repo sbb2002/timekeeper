@@ -95,8 +95,8 @@ class MetronomeWorker(PrintHandler):
         """Metronome callback. This notify you onbeat timing."""
         
         # If status, print that.
-        if status:
-            self.prtwl(status)
+        # if status:
+        #     self.prtwl(status)
             
         # Try to tick onbeat, or print warning.
         outdata.fill(0)
@@ -122,11 +122,11 @@ class MetronomeWorker(PrintHandler):
             outdata[:] = outdata_sub
 
         # Debug info                
-        if outdata.max() > 0.0:
-            print(outdata.min(), outdata.max(), outdata.mean())
+        # if outdata.max() > 0.0:
+            # print(outdata.min(), outdata.max(), outdata.mean())
 
         self.play_q.put_nowait(outdata.copy())
-        print("Queued!")
+        # print("Queued!")
 
         self.n_frames += frames
         
@@ -149,7 +149,7 @@ class MetronomeWorker(PrintHandler):
         y_osc = np.cos(2 * np.pi * freq * t, dtype=np.float32)
         # envelop = np.exp(-t * decaying_time)
         y = amp * y_osc
-        print("Y:", y.shape)
+        # print("Y:", y.shape)
 
         return y.astype(np.float32).reshape((-1, 1))
     
@@ -180,7 +180,7 @@ class MetronomeWorker(PrintHandler):
         # If cutoff previous, current note plays residual.
         if residual:
             residual = False
-            self.prtwl("Residual crossover.")
+            # self.prtwl("Residual crossover.")
             outdata[: note.shape[0] - cutoff] = note[cutoff: ]
         
         # If cycle of note, find index of note starting & end
