@@ -15,6 +15,8 @@ if __name__ == "__main__":
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE)
     metronome = MetronomeWorker(
+        note_denominator=3,
+        subnote_denominator=6,
         bpm=BPM, 
         samplerate=SAMPLE_RATE, 
         blocksize=BLOCK_SIZE)
