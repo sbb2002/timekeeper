@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from engines.audio.record import RecordWorker
 from engines.audio.metronome import MetronomeWorker
 from engines.analysis.plotter import MatplotlibPlotter
@@ -5,6 +7,7 @@ from engines.analysis.evaluate import EvaluatorWorker
 
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 1024
+BPM = 60
 
 if __name__ == "__main__":
     
@@ -12,18 +15,19 @@ if __name__ == "__main__":
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE)
     metronome = MetronomeWorker(
-        bpm=120, 
+        bpm=BPM, 
         samplerate=SAMPLE_RATE, 
         blocksize=BLOCK_SIZE)
-    # plotter = MatplotlibPlotter(
+    plotter = MatplotlibPlotter(
+        # data=recorder.audio_buffer,
+        data=metronome.play_q,
+        samplerate=SAMPLE_RATE,
+        blocksize=BLOCK_SIZE,
+        duration=10)
+    # evaluator = EvaluatorWorker(
     #     data=recorder.audio_buffer,
     #     samplerate=SAMPLE_RATE,
-    #     blocksize=BLOCK_SIZE,
-    #     duration=10)
-    evaluator = EvaluatorWorker(
-        data=recorder.audio_buffer,
-        samplerate=SAMPLE_RATE,
-    )
+    # )
     
     while True:
         try:
@@ -36,6 +40,6 @@ if __name__ == "__main__":
     metronome.stop()
     recorder.close()
     metronome.close()
-    evaluator.thread.join()
+    # evaluator.thread.join()
     
     

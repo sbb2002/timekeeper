@@ -46,35 +46,16 @@ class MetronomeWorker(PrintHandler):
         self.subnote_per_note = subnote_per_note if subnote_per_note is not None else 0
         
         # Timing info
-        self.n_frames = 0
+        self.n_frames = 0       # total frames from callback
         self.second_per_note = 60 / bpm
-        samples_per_note = int(samplerate * self.second_per_note)
+        self.samples_per_note = int(round(samplerate * self.second_per_note))
+        self.flag_remaining = False
+        self.info_remaining = 0
         
-        # First note at measure
-        self.residual_first = False
-        self.cutoff_first = None
-        self.samples_per_measure = note_per_measure * samples_per_note     # When BPM=60, 4 samplerate = 44100 * 4
-        self.state_first = threading.Event()
-        self.state_first.set()
-        self.note_first = self.generate_sound("first")
-        
-        # Other notes at measure
-        self.residual_onbeat = False
-        self.cutoff_onbeat = None
-        self.samples_per_note = samples_per_note            # When BPM=60, 1 samplerate = 44100
-        self.state_onbeat = threading.Event()
-        self.state_onbeat.clear()
-        self.note_onbeat = self.generate_sound("onbeat")
-        
-        # Sub-notes between notes
-        if subnote_per_note != 0:
-            self.residual_sub = False
-            self.cutoff_sub = None
-            self.samples_per_subnote = int(samples_per_note / subnote_per_note)     # When BPM=60, 0.25 samplerate = 44100 / 4
-            self.state_sub = threading.Event()
-            self.state_sub.clear()
-            self.note_sub = self.generate_sound("sub")
-        
+        # Measure, Note, Subnote
+        self.sound_note = self.generate_sound(note="onbeat")
+
+
         # Output thread
         self.thread = sd.OutputStream(
             samplerate=samplerate,
@@ -95,35 +76,45 @@ class MetronomeWorker(PrintHandler):
         """Metronome callback. This notify you onbeat timing."""
         
         # If status, print that.
-        # if status:
-        #     self.prtwl(status)
-            
-        # Try to tick onbeat, or print warning.
+        if status:
+            self.prtwl(status)
+           
+        # Just add tick array into outdata
         outdata.fill(0)
-        self.ix_sample = np.linspace(
-            self.n_frames, 
-            self.n_frames + frames, 
-            frames, dtype=np.int32)
-        
-        # Sound plays
-        outdata_first, self.residual_first, self.cutoff_first = self._play_note(
-            outdata, self.residual_first, self.cutoff_first, notetype="first")
-        outdata_onbeat, self.residual_onbeat, self.cutoff_onbeat = self._play_note(
-            outdata, self.residual_onbeat, self.cutoff_onbeat, notetype="onbeat")
-        outdata_sub, self.residual_sub, self.cutoff_sub = self._play_note(
-            outdata, self.residual_sub, self.cutoff_sub, notetype="sub")
-        
-        # Sound mixing
-        if self.state_first.is_set():
-            outdata[:] = outdata_first
-        elif self.state_onbeat.is_set():
-            outdata[:] = outdata_onbeat
-        elif self.state_sub.is_set():
-            outdata[:] = outdata_sub
+        ## if current frame range has onbeat timing, play note
+        frame_distance_at_block_start = self.n_frames % self.samples_per_note
+        frame_distance_at_block_finish = (self.n_frames + frames - 1) % self.samples_per_note
+        if frame_distance_at_block_start > frame_distance_at_block_finish:
+            ## find onbeat timing
+            n_frames_on_next_note = self.n_frames // self.samples_per_note + 1
+            remaining_frames = n_frames_on_next_note * self.samples_per_note
+            ix_onbeat = remaining_frames - self.n_frames
+            # frame_range = np.arange(self.n_frames, self.n_frames + frames) % self.samples_per_note
+            # ix_onbeat = np.argmax(frame_range == 0)
+            ## remaining check
+            len_sound = self.sound_note.shape[0]
+            remaining = ix_onbeat + len_sound - frames
+            if remaining > 0:
+                ## need next block to play ticking
+                self.prtwl("Index: ", ix_onbeat, "Tick len: ", len_sound, "Remaining: ", remaining)
+                outdata[ix_onbeat: ] = self.sound_note[: -remaining]
+                self.info_remaining = remaining
+                self.flag_remaining = True
+            else:
+                ## can play ticking in this block at all
+                outdata[ix_onbeat: ix_onbeat + len_sound] = self.sound_note
 
-        # Debug info                
-        # if outdata.max() > 0.0:
-            # print(outdata.min(), outdata.max(), outdata.mean())
+        # Remaining
+        if self.flag_remaining:
+            ## if remaining
+            if self.info_remaining > frames:
+                ## still need next block
+                outdata[: ] = self.sound_note[-self.info_remaining: - (self.info_remaining - frames)]
+                self.info_remaining -= frames
+            else:
+                outdata[: self.info_remaining] = self.sound_note[-self.info_remaining: ]
+                self.flag_remaining = False
+                self.info_remaining = 0
 
         self.play_q.put_nowait(outdata.copy())
         # print("Queued!")
@@ -137,10 +128,10 @@ class MetronomeWorker(PrintHandler):
         # Note info
         note_dict = {   # freq, amp, duration
             "first": (2400, 1.0),
-            "onbeat": (1800, 0.7),
+            "onbeat": (1800, 0.4),
             "sub": (1500, 0.3)
         }
-        freq, amp = note_dict.get(note, (1800, 0.7))
+        freq, amp = note_dict.get(note, note_dict['onbeat'])
                 
         # Sensible time
         t = self._get_ticking_time_array()
@@ -154,67 +145,11 @@ class MetronomeWorker(PrintHandler):
         return y.astype(np.float32).reshape((-1, 1))
     
     def _get_ticking_time_array(self):
-        sensible_time = 0.005   # 5ms
+        sensible_time = 0.05   # 5ms
         samples_per_sensible_time = int(sensible_time * self.samplerate)
-        t = np.linspace(0, samples_per_sensible_time, 
+        t = np.linspace(0, samples_per_sensible_time - 1, 
                         samples_per_sensible_time,
                         dtype=np.int16)
         return t
     
-    def _play_note(self, outdata, residual, cutoff=None, notetype="first"):
-        
-        # Assign ix_onbeat & note
-        if notetype == "first":
-            ix_onbeat = self.ix_sample % self.samples_per_measure
-            note = self.note_first
-        elif notetype == "onbeat":
-            ix_onbeat = self.ix_sample % self.samples_per_note
-            note = self.note_onbeat
-        elif notetype == "sub":
-            ix_onbeat = self.ix_sample % self.samples_per_subnote
-            note = self.note_sub
-        else:
-            self.prtwl("Warning!", "Invalid note.")
-            return
-        
-        # If cutoff previous, current note plays residual.
-        if residual:
-            residual = False
-            # self.prtwl("Residual crossover.")
-            outdata[: note.shape[0] - cutoff] = note[cutoff: ]
-        
-        # If cycle of note, find index of note starting & end
-        state_onbeat = (ix_onbeat == 0).any()
-        if state_onbeat:
-            ix_tick_start = np.where(ix_onbeat == 0)[0][0]
-            ix_tick_end = ix_tick_start + note.shape[0]
-            # print("TICK: ", ix_tick_start, ix_tick_end)
-            
-            # If occurs cutoff current, residual lefts
-            if ix_tick_end >= self.blocksize:
-                residual = True
-                cutoff = self.blocksize - ix_tick_start
-                # print("CUTOFF", cutoff)
-                outdata[ix_tick_start: ] = note[: cutoff]
-            
-            # Else, just play note.
-            else:
-                outdata[ix_tick_start: ix_tick_end] = note
-                
-        # Timing control
-        if state_onbeat:
-            if notetype == "first":
-                self.state_first.set()
-            elif notetype == "onbeat":
-                self.state_onbeat.set()
-            elif notetype == "sub":
-                self.state_sub.set()
-        else:
-            if notetype == "first":
-                self.state_first.clear()
-            elif notetype == "onbeat":
-                self.state_onbeat.clear()
-            elif notetype == "sub":
-                self.state_sub.clear()
-
-        return outdata, residual, cutoff
+    # def _play_note(self, outdata, residual, cutoff=None, notetype="first"):
