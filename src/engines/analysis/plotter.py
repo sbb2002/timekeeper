@@ -46,18 +46,27 @@ class MatplotlibPlotter(PrintHandler):
         if data_from_q:
             data = np.concatenate(data_from_q, axis=0)
             # print("SHAPE", data.shape, self.plot_array.shape)
+            
+            # Energy
+            energy = np.sqrt(np.mean(data ** 2))
+            
             try:
                 self.plot_array[: -len(data)] = self.plot_array[len(data):]
-                self.plot_array[-len(data):] = data.reshape((-1,))
+                self.plot_array[-len(data):] = energy.reshape((-1,))
             except ValueError as e:
                 self.prtwl("ValueError in plot update:", str(e))
             self.line.set_ydata(self.plot_array)
-        
+            if energy > 0.3:
+                self.line.set_color('r')
+            elif energy > 0.01:
+                self.line.set_color('orange')
+            else:
+                self.line.set_color('g')
+                        
         return self.line,
             
         
     def initialize(self):
-        
         # xlim = self.samplerate 
         self.fig, self.ax = plt.subplots()
         self.line, = self.ax.plot(self.xaxis, self.plot_array, color='y')

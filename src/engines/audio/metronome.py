@@ -11,13 +11,14 @@ class MetronomeWorker(PrintHandler):
     """Train your rhythmic skill! This provides quantitative measuring for onbeat-attacking.
     
     **Arguments**
-    * `bpm`                 -- (int | float) Beat Per Minute. Default is `60.0`.
-    * `note_per_measure`    -- (int) The number of notes per a measure. Default is `4`.
-    * `subnote_per_note`    -- (int | None) The number of subnotes between notes. Default is `4`.
-    * `samplerate`          -- (int) Sampling rate. Default is `44100`.
-    * `blocksize`           -- (int) Samples per a buffer. Default is `1024`.
-    * `channels`            -- (int) Output channels. Default is `1` as mono.
-    * `device`              -- (int | None) Output device. Default is `None`.
+    * `bpm`                     -- (int | float) Beat Per Minute. Default is `60.0`.
+    * `note_denominator`        -- (int) Denominator of note per measure. Default is `4`.
+    * `subnote_denominator`     -- (int | None) Denominator of subnote per measure. 
+                                    If not want, you can select `None`. Default is `16`.
+    * `samplerate`              -- (int) Sampling rate. Default is `44100`.
+    * `blocksize`               -- (int) Samples per a buffer. Default is `1024`.
+    * `channels`                -- (int) Output channels. Default is `1` as mono.
+    * `device`                  -- (int | None) Output device. Default is `None`.
     
     **Example**
     
@@ -95,15 +96,11 @@ class MetronomeWorker(PrintHandler):
         self.thread.start()
         
         # Debugging queue
-        self.play_q = Queue()
+        self.buffer = Queue()
         
     def metronome_callback(self, outdata, frames, time_info, status):
         """Metronome callback. This notify you onbeat timing."""
         
-        # If status, print that.
-        if status:
-            self.prtwl(status)
-           
         # Just add tick array into outdata
         outdata.fill(0)
         
@@ -112,7 +109,9 @@ class MetronomeWorker(PrintHandler):
             notemaker.fillin_sound(outdata, frames, self.n_frames)
 
         # Debugging
-        self.play_q.put_nowait(outdata.copy())
+        # if status:
+            # self.prtwl(status)
+        # self.buffer.put_nowait(outdata.copy())
         # print("Queued!")
         # if outdata.max() > 0:
             # self.prtwl(f"#{self.n_frames // self.notemaker_sub.samples_per_note} subnote energy: ", outdata.max())

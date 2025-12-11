@@ -28,14 +28,14 @@ class RecordWorker(PrintHandler):
     >>> worker.thread.close()
     
     
-    * How to get recording data from `audio_buffer`?
+    * How to get recording data from `buffer`?
     
     Also, you can use audio buffer as `Queue`.
     If using, you should get all in the buffer. 
     
     >>> While True:
     >>>     try:
-    >>>         worker.audio_buffer.get_nowait()
+    >>>         worker.buffer.get_nowait()
     >>>     except:
     >>>         ...
     
@@ -48,7 +48,7 @@ class RecordWorker(PrintHandler):
                  device: int | None=None):
                 
         # Audio buffer for analysis
-        self.audio_buffer = queue.Queue()
+        self.buffer = queue.Queue()
         
         # Input thread
         self.thread = sd.InputStream(
@@ -67,13 +67,13 @@ class RecordWorker(PrintHandler):
     def record_callback(self, indata, frames, time_info, status):
         """Recording callback. Those arguments are neccessary for thread."""
         
-        # If status, print that.
-        if status:
-            self.prtwl(status)
+        # Debugging
+        # if status:
+        #     self.prtwl(status)
         
         # Try to acquire audio buffers, or print warning.
         try:
-            self.audio_buffer.put_nowait(indata.copy())
+            self.buffer.put_nowait(indata.copy())
         except queue.Full:
             self.prtwl("Warning!", "This buffer will be ignored.")
         except Exception as e:

@@ -1,0 +1,16 @@
+2025. 12. 11.
+src\engines\analysis\metronome.py
+
+MetronomeWorker에게서 치명적인 문제점이 있었는데 기존 것은 오버헤드가 너무 심해 latency가 지나치게 컸다.
+실제로 못써먹을 수준(>200ms)이었다. 그래서 기존것을 _deprecated로 보관하고 다시 만들었다.
+현재것은 동일한 이름의 파일이다. 인덱스 찾는 로직의 복잡도를 O(frames) -> O(1)짜리 2줄으로 낮추었다.
+그 결과 latency가 거의 없는 메트로놈 소리를 구현할 수 있었다.
+
+그리고 사용하거나 추후 편집에 용이하도록 NoteSoundMaker라는 클래스로 만들어 최대한 캡슐화를 꾀했다.
+이를 이용해서 간편하게 4분음표, 16분음표, 더나가서 3분음표(셋잇단음표:4), 6분음표(여섯잇단음표:4) 등을 사용할 수 있다.
+
+다음에는 아래 TODO가 남았다.
+
+#TODO
+1. 녹음소리 energy를 통해 attack point 잡기
+2. 첫 attack point를 기준으로 note, subnote 평가하기

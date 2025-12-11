@@ -8,6 +8,8 @@ from engines.analysis.evaluate import EvaluatorWorker
 SAMPLE_RATE = 44100
 BLOCK_SIZE = 1024
 BPM = 60
+NOTE_DENOMINATPR = 4
+SUBNOTE_DENOMINATOR = 16
 
 if __name__ == "__main__":
     
@@ -15,19 +17,19 @@ if __name__ == "__main__":
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE)
     metronome = MetronomeWorker(
-        note_denominator=3,
-        subnote_denominator=6,
+        note_denominator=NOTE_DENOMINATPR,
+        subnote_denominator=SUBNOTE_DENOMINATOR,
         bpm=BPM, 
         samplerate=SAMPLE_RATE, 
         blocksize=BLOCK_SIZE)
     plotter = MatplotlibPlotter(
-        # data=recorder.audio_buffer,
-        data=metronome.play_q,
+        data=recorder.buffer,
+        # data=metronome.buffer,
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE,
         duration=10)
     # evaluator = EvaluatorWorker(
-    #     data=recorder.audio_buffer,
+    #     data=recorder.buffer,
     #     samplerate=SAMPLE_RATE,
     # )
     
