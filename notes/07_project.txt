@@ -1,0 +1,17 @@
+2025. 12. 12.
+src\engines\analysis\evalute.py
+
+무엇을 분석해야할지 목록화부터 해보자.
+
+# TODO
+1. energy 변환 --> OK
+2. smoothing --> np.convolve를 쓰는데 이 특성상 길이가 바뀜. 복잡해서 일단 패스.
+3. onset detecting --> np.diff와 heuristic threshold를 가지고 검출... 일단 OK.
+
+어렵지 않게 attack point를 탐색할 수 있었으나 2가지 의문점이 있다.
+1. 이게 진짜 attack point 맞나? --> 이건 집에서 직접 쳐봐야알 것 같음
+2. block 단위로 들어오는 특성 상 정박 index를 맞추기 복잡 --> 특히 첫 attack point를 기준으로 시작해야함
+ex. 만약 20분 넘게 켜놓는다고 생각해보면... --> 현재 블록이 어느 정도 쌓이면 npy형태로 저장해놓는 식으로 해야할 듯
+
+특히 2번 때문에 골머리아프다. 매 attack point도 얻어내야하고, 정박 기준과의 거리도 재야하고. 그럴려면 index 문제도 해결해야하고.
+그거에 대한 고민은 차차 해보자.
