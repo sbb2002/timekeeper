@@ -13,6 +13,8 @@ SUBNOTE_DENOMINATOR = 16
 
 if __name__ == "__main__":
     
+    print("Timekeeper START")
+    
     recorder = RecordWorker(
         samplerate=SAMPLE_RATE,
         blocksize=BLOCK_SIZE)
@@ -22,22 +24,24 @@ if __name__ == "__main__":
         bpm=BPM, 
         samplerate=SAMPLE_RATE, 
         blocksize=BLOCK_SIZE)
-    plotter = MatplotlibPlotter(
-        data=recorder.buffer,
-        # data=metronome.buffer,
-        samplerate=SAMPLE_RATE,
-        blocksize=BLOCK_SIZE,
-        duration=10)
-    # evaluator = EvaluatorWorker(
+    # plotter = MatplotlibPlotter(
     #     data=recorder.buffer,
+    #     # data=metronome.buffer,
     #     samplerate=SAMPLE_RATE,
-    # )
+    #     blocksize=BLOCK_SIZE,
+    #     duration=10)
+    evaluator = EvaluatorWorker(
+        data=recorder.buffer,
+        note_denominator=NOTE_DENOMINATPR,
+        subnote_denominator=SUBNOTE_DENOMINATOR,
+        samplerate=SAMPLE_RATE,
+    )
     
     while True:
         try:
             pass
         except KeyboardInterrupt:
-            print("Keyboard interruption.")
+            print("Keyboard interruption detected.")
             break
     
     recorder.stop()
@@ -46,4 +50,4 @@ if __name__ == "__main__":
     metronome.close()
     # evaluator.thread.join()
     
-    
+    print("Timekeeper END")

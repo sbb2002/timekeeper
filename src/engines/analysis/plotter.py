@@ -48,17 +48,17 @@ class MatplotlibPlotter(PrintHandler):
             # print("SHAPE", data.shape, self.plot_array.shape)
             
             # Energy
-            energy = np.sqrt(np.mean(data ** 2))
+            # energy = np.sqrt(np.mean(data ** 2))
             
             try:
                 self.plot_array[: -len(data)] = self.plot_array[len(data):]
-                self.plot_array[-len(data):] = energy.reshape((-1,))
+                self.plot_array[-len(data):] = data.reshape((-1,))
             except ValueError as e:
                 self.prtwl("ValueError in plot update:", str(e))
             self.line.set_ydata(self.plot_array)
-            if energy > 0.3:
+            if data.max() > 0.3:
                 self.line.set_color('r')
-            elif energy > 0.01:
+            elif data.max() > 0.01:
                 self.line.set_color('orange')
             else:
                 self.line.set_color('g')

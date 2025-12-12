@@ -23,7 +23,9 @@ class EvaluatorWorker(PrintHandler):
         self.samplerate = samplerate
         
         # Threshold settings
-        self.n_frames = 0
+        self.flag_threshold = False
+        self.energy_threshold = 0.0
+        self.n_sample_threshold = 0
         
         # Open the thread
         self.thread = threading.Thread(
@@ -42,31 +44,38 @@ class EvaluatorWorker(PrintHandler):
             try:
                 # self.prtwl("Get buffer.")
                 buffer = self.data.get(timeout=0.1)
-                self.n_frames += len(buffer)
-                
             except queue.Empty:
                 self.prtwl("Warning!", "Queue was empty.")
-                break
+                continue
             
-            # Get attack point
+            # Evaluate
+            self._set_threshold(buffer)
             
-            ## Energy
+            # Evaluate punctuality
             energy = np.sqrt(buffer ** 2)
-            # self.prtwl(f"Frame #{self.n_frames} ENERGY: ", energy.shape)
+            if energy.max() > self.energy_threshold:
+                self.prtwl(f"#{energy.argmax()} ENERGY: ", energy.max())
+                # continue
             
-            ## Smoothing(opt.)
-            # smoothed_energy = self._smoothing(energy, windowsize=10)
-            # self.prtwl("Smoothed ENERGY: ", smoothed_energy.shape)
+    def _set_threshold(self, buffer):
+        
+        # If threshold is 0, set threshold by initial recording
+        if self.flag_threshold is False:
+            energy = np.sqrt(np.mean(buffer ** 2))
+            self.energy_threshold += energy
+            self.n_sample_threshold += 1
             
-            ## Onset detection
-            onset = np.diff(energy, axis=0)
-            if onset.max() > 0.03:
-                self.prtwl("ONSET: ", onset.max(), "at frame", onset.argmax())
+            # Avg by 3seconds
+            if self.n_sample_threshold > (self.samplerate * 3 / 1024):
+                self.energy_threshold = self.energy_threshold / (self.samplerate * 3 / 1024)
+                self.energy_threshold *= 10
+                self.flag_threshold = True
+                self.prtwl("Threshold was set. THRES.: ", self.energy_threshold)
+        
+        
+
+
+        # Realtime displaying...
             
-            
-            
-            
-    def _smoothing(self, buffer, windowsize):
-        window = np.ones(windowsize) / windowsize
-        conv = np.convolve(buffer.reshape((-1)), v=window, mode="valid")
-        return conv.reshape((-1, 1))
+    def _split_buffer(self, buffer):
+        ...
