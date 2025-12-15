@@ -24,18 +24,18 @@ if __name__ == "__main__":
         bpm=BPM, 
         samplerate=SAMPLE_RATE, 
         blocksize=BLOCK_SIZE)
-    # plotter = MatplotlibPlotter(
-    #     data=recorder.buffer,
-    #     # data=metronome.buffer,
-    #     samplerate=SAMPLE_RATE,
-    #     blocksize=BLOCK_SIZE,
-    #     duration=10)
-    evaluator = EvaluatorWorker(
+    plotter = MatplotlibPlotter(
         data=recorder.buffer,
-        note_denominator=NOTE_DENOMINATPR,
-        subnote_denominator=SUBNOTE_DENOMINATOR,
+        # data=metronome.buffer,
         samplerate=SAMPLE_RATE,
-    )
+        blocksize=BLOCK_SIZE,
+        duration=10)
+    # evaluator = EvaluatorWorker(
+    #     data=recorder.buffer,
+    #     note_denominator=NOTE_DENOMINATPR,
+    #     subnote_denominator=SUBNOTE_DENOMINATOR,
+    #     samplerate=SAMPLE_RATE,
+    # )
     
     while True:
         try:

@@ -46,7 +46,7 @@ class EvaluatorWorker(PrintHandler):
                 
             except queue.Empty:
                 self.prtwl("Warning!", "Queue was empty.")
-                break
+                continue
             
             # Get attack point
             
