@@ -7,6 +7,38 @@ from matplotlib.animation import FuncAnimation
 from common.handler import PrintHandler
 
 
+# Evaluator
+def get_energy(buffer):
+    return np.sqrt(buffer ** 2)
+
+def get_odf(energy):
+    ## 1) STFT
+    f, t, zxx = scipy.signal.stft(energy.reshape((-1,)))
+    # self.prtwl("STFT shape:", f.shape, t.shape, zxx.shape)
+    
+    ## 2) Magnitude
+    mag = np.abs(zxx)
+    # self.prtwl("STFT MAG:", mag.shape)
+    
+    ## 3) ODF
+    prev_mag = mag[:, :-1]
+    curr_mag = mag[:, 1:]
+    diff_mag = curr_mag - prev_mag
+    halfwave_rectified = np.maximum(0, diff_mag)
+    odf = np.sum(halfwave_rectified, axis=0)
+    
+    return odf
+
+def set_threshold(odf, factor=1.5, offset=0.1, window_size=20):
+    # Moving average
+    window_size = max(min(odf.shape[0] - 2, window_size), 12)
+    local_mean = np.convolve(odf, np.ones(window_size)/window_size, mode='same')
+    
+    # Set threshold
+    threshold = local_mean * factor + offset
+    
+    return threshold
+
 # Matplotlib plotter
 class MatplotlibPlotter(PrintHandler):
     def __init__(self, data, samplerate, blocksize, duration=5):
@@ -27,6 +59,8 @@ class MatplotlibPlotter(PrintHandler):
         self.n_onsets = 0
         self.memories = []
         self.memo = (0, 1)
+        self.total_frames = np.int64(0)
+        self.last_onset_frame = np.int64(-100)
 
         self.initialize()
         
@@ -52,56 +86,51 @@ class MatplotlibPlotter(PrintHandler):
         
         if buffer:
             data = np.concatenate(buffer, axis=0)
-            # print("SHAPE", data.shape, self.plot_array.shape)
-            
+
             # Energy
-            energy = np.sqrt(data ** 2)
-            # self.prtwl("ENERGY shape:", energy.shape)
+            energy = get_energy(data)
             
-            # Onset
-            # data = np.diff(data, axis=0)
-            
-            ## 1) STFT
-            f, t, zxx = scipy.signal.stft(energy.reshape((-1,)))
-            # self.prtwl("STFT shape:", f.shape, t.shape, zxx.shape)
-            
-            ## 2) Magnitude
-            mag = np.abs(zxx)
-            # self.prtwl("STFT MAG:", mag.shape)
-            
-            ## 3) ODF
-            prev_mag = mag[:, :-1]
-            curr_mag = mag[:, 1:]
-            diff_mag = curr_mag - prev_mag
-            halfwave_rectified = np.maximum(0, diff_mag)
-            odf = np.sum(halfwave_rectified, axis=0)
-            # self.prtwl("ODF:", odf.shape)
-            
-            
+            # ODF
+            odf = get_odf(energy)
+
             ## 4) Peak picking w/ shape-correction
-            window_size = max(min(odf.shape[0] - 2, 20), 12)
-            if window_size < 20:
-                self.prtwl("Window size:", window_size)
-            local_mean = np.convolve(odf, np.ones(window_size)/window_size, mode='same')
-            # self.prtwl("Local mean:", local_mean.shape)
-            
-            threshold_factor = 1.5
-            threshold_offset = 0.01
-            threshold = local_mean * threshold_factor + threshold_offset
+            threshold = set_threshold(odf, factor=1.1, offset=0.005, window_size=20)
             
             try:
                 peaks_over_threshold = (odf > threshold).astype(int)
                 onset_frames = np.where(np.diff(peaks_over_threshold) > 0)[0] + 1
+                
+                if len(onset_frames) > 0:
+                    self.prtwl("Onset segm.:", onset_frames, "/ Total segm.: ", odf.shape[0])
+                    self.n_onsets = max(len(onset_frames), self.n_onsets)
+                
+                    ## Debug: Memory onsets per buffer
+                    # self.memo = (self.n_onsets, data.shape[0])   # Onsets / Buffer size in active
+                    # self.memories.append(self.memo)
+                    
+                    # Define current onset frame: total + 1st onset
+                    current_onset_frame = self.total_frames + round(onset_frames[0] / odf.shape[0] * data.shape[0])
+                    
+                    # Measure distance from last onset
+                    distance = current_onset_frame - self.last_onset_frame
+                    
+                    # Avoid duplicated onset within 50 centiseconds (2205 samples at 44100 Hz)
+                    if distance <= 2205:
+                        raise Exception(f"Distance {distance} = Curr {current_onset_frame} - Last {self.last_onset_frame}...")
+                    self.last_onset_frame = current_onset_frame
+                    
+                
             except ValueError:
+                onset_frames = []
                 self.prtwl("Too much shrinken shape. It seems CPU was overloaded. Discarding onset detection for this frame.")
             
-            if len(onset_frames) > 0:
-                self.prtwl("Onset frames:", onset_frames)
-                self.n_onsets = max(len(onset_frames), self.n_onsets)
-            
-                ## Debug: Memory onsets per buffer
-                self.memo = (self.n_onsets, data.shape[0])   # Onsets / Buffer size in active
-                self.memories.append(self.memo)
+            except Exception as e:
+                onset_frames = []
+                self.prtwl("Same onset detection on border:", str(e))
+
+            finally:
+                self.total_frames += data.shape[0]
+                
             
             # if (data.max() > 0.01) & (data.max() < 0.03):
                 # data = data * 10
@@ -118,10 +147,10 @@ class MatplotlibPlotter(PrintHandler):
                 
             # Update line
             self.line.set_ydata(self.plot_array)
-            self.texts.set_text(f"ONSET: {len(onset_frames)} (max. {self.n_onsets}) per buffer ({self.memo[0]/ self.memo[1]:.4%})")
+            # self.texts.set_text(f"ONSET: {len(onset_frames)} (max. {self.n_onsets}) per buffer ({self.memo[0]/ self.memo[1]:.4%})")
             if data.max() > 0.3:
                 self.line.set_color('r')
-            elif data.max() > 0.01:
+            elif (data.max() > 0.01) & (len(onset_frames) > 0):
                 self.line.set_color('orange')
             else:
                 self.line.set_color('g')
