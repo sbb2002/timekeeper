@@ -116,6 +116,24 @@ def merge_onsets_by_strength(onset_frames, onset_strengths, sr=44100, temporal_r
 
     return np.array(final_onsets)
     
+def merge_onsets_between_buffers(current_onset_frames, last_onset_frames, total_frames, sr=44100, temporal_resolution=20):
+    
+    # Set frame distance
+    FRAME_THRESHOLD = int(sr * temporal_resolution / 1000)
+    
+    if len(current_onset_frames) > 0:
+        # self.prtwl(onset_frames)
+        # Measure distance from last to current onset
+        if last_onset_frames.size > 0:
+            prev_onset = last_onset_frames[-1]
+            curr_onset = current_onset_frames[0] + total_frames
+            distance = curr_onset - prev_onset
+            if distance < 10000:
+                # Ignore same onsets at current buffer
+                ...
+                # self.prtwl("Distance: ", distance, f"= Curr {curr_onset} - Last {prev_onset}")
+        last_onsets = current_onset_frames + self.total_frames
+                
 
 # Matplotlib plotter
 class MatplotlibPlotter(PrintHandler):
@@ -166,6 +184,7 @@ class MatplotlibPlotter(PrintHandler):
             threshold = set_threshold(odf, factor=1.6, offset=0.1, window_size=20)
             
             try:
+                # Onset Detection
                 onset_segms, onset_strengths = detect_onset(odf, threshold)
                 onset_frames = convert_segms_into_frames(
                     onset_segms,
@@ -177,14 +196,16 @@ class MatplotlibPlotter(PrintHandler):
                     sr=self.samplerate,
                 )
                 
+                # If onsets,
                 if len(final_onsets) > 0:
                     self.prtwl(final_onsets)
+                    # Measure distance from last to current onset
                     if self.last_onsets.size > 0:
                         prev_onset = self.last_onsets[-1]
                         curr_onset = final_onsets[0] + self.total_frames
                         distance = curr_onset - prev_onset
-                        if distance < 882:
-                            self.prtwl("Distance: ", distance, f"=Curr {curr_onset} - Last {prev_onset}")
+                        if distance < 10000:
+                            self.prtwl("Distance: ", distance, f"= Curr {curr_onset} - Last {prev_onset}")
                     self.last_onsets = final_onsets + self.total_frames
                 
                 # peaks_over_threshold = (odf > threshold).astype(int)
