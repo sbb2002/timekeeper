@@ -1,21 +1,21 @@
 import queue
-import scipy
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from scipy.signal import stft
+from scipy.signal import stft, decimate
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
+
 from common.handler import PrintHandler
 
 
-# Evaluator
+# Energy
 def get_energy(buffer):
     return np.sqrt(buffer ** 2)
 
-def get_odf(energy):
+# Onset Detection
+def get_odf(zxx):
     ## 1) STFT
-    _, _, zxx = stft(energy.reshape((-1,)))
-    # self.prtwl("STFT shape:", f.shape, t.shape, zxx.shape)
+    # _, _, zxx = stft(energy.reshape((-1,)))
     
     ## 2) Magnitude & phase
     mag = np.abs(zxx)
@@ -80,10 +80,10 @@ def convert_segms_into_frames(segms, total_segms, blocksize):
         segms / total_segms * frames_per_total_segms
         ).astype(int)
 
-def merge_onsets_by_strength(onset_frames, onset_strengths, sr=44100, temporal_resolution=20):
+def merge_onsets_by_strength(onset_frames, onset_strengths, sr=44100):
     
     # Set frame distance
-    FRAME_THRESHOLD = int(sr * temporal_resolution / 1000)
+    FRAME_THRESHOLD = get_distance_frames_for_temporal_resolution(sr=sr)
     
     if onset_frames.size == 0:
         return np.array([])
@@ -116,24 +116,231 @@ def merge_onsets_by_strength(onset_frames, onset_strengths, sr=44100, temporal_r
 
     return np.array(final_onsets)
     
-def merge_onsets_between_buffers(current_onset_frames, last_onset_frames, total_frames, sr=44100, temporal_resolution=20):
+def validate_first_onset_connecting_last_onset(current_onset_frames, last_onset_frames, total_frames, sr=44100):
     
     # Set frame distance
-    FRAME_THRESHOLD = int(sr * temporal_resolution / 1000)
+    FRAME_THRESHOLD = get_distance_frames_for_temporal_resolution(sr=sr)
     
-    if len(current_onset_frames) > 0:
-        # self.prtwl(onset_frames)
-        # Measure distance from last to current onset
+    # If current onset frames exist
+    if current_onset_frames.size > 0:
+        # If last onset frames exist
         if last_onset_frames.size > 0:
+            # Measure distance from last to current onset
             prev_onset = last_onset_frames[-1]
             curr_onset = current_onset_frames[0] + total_frames
             distance = curr_onset - prev_onset
-            if distance < 10000:
-                # Ignore same onsets at current buffer
-                ...
-                # self.prtwl("Distance: ", distance, f"= Curr {curr_onset} - Last {prev_onset}")
-        last_onsets = current_onset_frames + self.total_frames
-                
+            # If farther than threshold, ignore the 1st element of current onsets
+            if distance < FRAME_THRESHOLD:
+                current_onset_frames = current_onset_frames[1:]
+        # Memory this onsets for next
+        last_total_onset_frames = current_onset_frames + total_frames
+    
+    # Else returns raw
+    else:
+        current_onset_frames = current_onset_frames
+        last_total_onset_frames = last_onset_frames
+    
+    return current_onset_frames, last_total_onset_frames
+
+def get_distance_frames_for_temporal_resolution(sr=44100):
+    TEMPORAL_RESOLUTION = 20    # ms
+    return round(sr * TEMPORAL_RESOLUTION / 1000)
+
+# Pitch Detection
+def get_refined_pitch(f, zxx, sr):
+    ## 1) Get magnitude
+    mag = np.log1p(np.abs(zxx))
+    if mag.max() < 0.05:
+        return 0    # if silent
+    
+    ## 2) HPS(Harmonic Product Spectrum)
+    hps = np.copy(mag)
+    for i in range(2, 5):       # 2nd, 3rd harmonics is considering
+        downsampled = mag[::i]
+        hps[:len(downsampled)] *= downsampled
+
+    ## 3) Rough Peak
+    max_search_ix = np.argmin(np.abs(f - 1000))
+    try:
+        peak_ix = np.argmax(hps[:max_search_ix])
+        df = f[1] - f[0]
+        
+    except:
+        peak_ix = np.argmax(hps)
+        df = 1
+        
+    ## 4) Parabolic Interpolation
+    if 0 < peak_ix < len(hps) - 1:
+        alpha = hps[peak_ix - 1]
+        beta = hps[peak_ix]
+        gamma = hps[peak_ix + 1]
+        
+        denom = 2 * beta - (alpha + gamma)
+        if abs(denom) >= 1e-10:
+            p = 0.5 * (alpha - gamma) / denom
+            pitch = (peak_ix + p) * df
+            # refined_ix = peak_ix + p
+            # try:
+            #     sampler = sr / (2 * (len(f) - 1))
+            # except ZeroDivisionError:
+            #     print("ZeroDivision is occured.", len(f))
+            #     sampler = 1
+            # pitch = refined_ix * sampler
+            
+        else:
+            pitch = peak_ix * df
+    else:
+        pitch = peak_ix * df
+        
+    return pitch
+
+def get_ptich_using_yin(data, sr, threshold=0.1):
+    ## 1) Difference Function
+    N = len(data)
+    tau_max = N // 2
+    diff = np.zeros(tau_max)
+    
+    for tau in range(1, tau_max):
+        delta = data[tau:] - data[: -tau]
+        diff[tau] = np.sum(delta ** 2)
+        
+    ## 2) Cumulative Mean Normalized Difference Function
+    cmndf = np.zeros(tau_max)
+    cmndf[0] = 1
+    running_sum = 0
+    for tau in range(1, tau_max):
+        running_sum += diff[tau]
+        cmndf[tau] = diff[tau] / ((1 / tau) * running_sum)
+        
+    ## 3) Absolute Threshold
+    possible_taus = np.where(cmndf < threshold)[0]
+    if len(possible_taus) > 0:
+        tau = possible_taus[0]
+        while tau + 1 < tau_max and cmndf[tau + 1] < cmndf[tau]:
+            tau += 1
+    else:
+        tau = np.argmin(cmndf)
+        
+    ## 4) Parabolic Interpolation & Freq conversion
+    if tau > 0 and tau < tau_max - 1:
+        y0, y1, y2 = cmndf[tau-1], cmndf[tau], cmndf[tau+1]
+        p = 0.5 * (y0 - y2) / (y0 + y2 - 2 * y1)
+        refined_tau = tau + p
+        pitch = sr / refined_tau
+    else:
+        pitch = sr / tau if tau != 0 else 0
+        
+    return pitch if 50 < pitch < 2000 else 0
+
+def fast_yin(data, fs, threshold=0.15):
+    
+    data = np.asarray(data).flatten()
+    
+    N = len(data)
+    tau_max = N // 2
+    
+    # 1. Difference Function을 FFT로 최적화 (핵심!)
+    # d(tau) = sum(x[t] - x[t+tau])^2 계산의 고속 버전
+    # 에너지를 미리 계산
+    energy = np.sum(data**2)
+    # FFT 기반 자기상관(Autocorrelation) 계산
+    # rfft를 사용하면 복소수 연산이 빨라집니다.
+    n_fft = 2**int(np.ceil(np.log2(2 * N - 1)))
+    data_fft = np.fft.rfft(data, n=n_fft)
+    res = np.fft.irfft(data_fft * np.conj(data_fft))[:tau_max]
+    
+    # YIN의 difference function 유도식: d(tau) = e(0) + e(tau) - 2*r(tau)
+    # 편의상 실시간 1024 샘플에서는 아래의 근사식을 사용하거나 numpy 벡터로 처리
+    tau = np.arange(tau_max)
+    # 루프 대신 벡터 연산으로 차이 함수 계산
+    diff = np.zeros(tau_max)
+    for t in range(1, tau_max): # 이 루프는 tau_max(512)만큼만 돌아서 훨씬 빠름
+        # 더 극단적인 최적화는 아래 루프도 넘파이 슬라이싱으로 대체 가능
+        diff[t] = energy + np.sum(data[:N-t]**2) - 2 * res[t]
+
+    # 2. CMNDF 계산 (벡터화)
+    # running_sum을 cumsum으로 한 번에 처리
+    diff[0] = 1
+    running_sum = np.cumsum(diff[1:])
+    idx = np.arange(1, tau_max)
+    cmndf = np.zeros(tau_max)
+    cmndf[0] = 1
+    cmndf[1:] = diff[1:] / ((1 / idx) * running_sum)
+
+    # 3. 피치 추출 (기존과 동일하되 인덱스 제한)
+    possible_taus = np.where(cmndf < threshold)[0]
+    if len(possible_taus) > 0:
+        tau = possible_taus[0]
+        # 4. 정밀 보정 (Parabolic Interpolation)
+        if 0 < tau < tau_max - 1:
+            y0, y1, y2 = cmndf[tau-1], cmndf[tau], cmndf[tau+1]
+            denom = 2 * y1 - y0 - y2
+            if abs(denom) > 1e-10:
+                p = 0.5 * (y0 - y2) / denom
+                pitch = fs / (tau + p)
+            else:
+                pitch = fs / tau
+        else:
+            pitch = fs / tau
+    else:
+        pitch = 0 # 피치 못 찾음
+
+    return pitch if 50 < pitch < 1200 else 0 # 기타/목소리 대역 필터링
+
+def ultra_fast_yin(data, fs, threshold=0.15):
+    # 1. 1차원 보장 및 가벼운 전처리
+    data = np.asarray(data).flatten()
+    N = len(data)
+    tau_max = N // 2
+    
+    # 2. Difference Function 계산 (루프 없는 버전)
+    # d(tau) = sum(x[t]^2) + sum(x[t+tau]^2) - 2*sum(x[t]*x[t+tau])
+    
+    # 에너지 항 계산
+    w = N - tau_max
+    x_squared = data**2
+    # 처음 윈도우의 에너지
+    power = np.sum(x_squared[:w])
+    # 각 tau에 대한 에너지를 cumsum으로 빠르게 계산
+    # (약간의 근사치를 사용하면 더 빨라지지만, 여기서는 정확도를 위해 rfft 사용)
+    
+    # FFT를 이용한 상호상관(Cross-correlation)
+    n_fft = 2**int(np.ceil(np.log2(2 * N)))
+    f_data = np.fft.rfft(data, n=n_fft)
+    corr = np.fft.irfft(f_data * np.conj(f_data))
+    corr = corr[:tau_max]
+    
+    # Difference function (루프 없이 벡터 연산)
+    # d(tau) = (energy at 0) + (energy at tau) - 2 * corr
+    # 실시간 짧은 구간에서는 energy at tau를 energy at 0로 근사 가능
+    cumulative_energy = np.sum(x_squared) 
+    diff = 2 * cumulative_energy - 2 * corr
+    diff[0] = 1 # 0나누기 방지
+
+    # 3. CMNDF (루프 없이 계산)
+    # running_sum[tau] = sum(diff[1:tau+1])
+    running_sum = np.cumsum(diff[1:])
+    tau_indices = np.arange(1, tau_max)
+    cmndf = np.ones(tau_max)
+    cmndf[1:] = diff[1:] / ((1 / tau_indices) * running_sum)
+
+    # 4. 피크 탐색 (벡터화된 조건 검색)
+    possible = np.where(cmndf < threshold)[0]
+    if len(possible) > 0:
+        # 첫 번째로 임계값을 넘는 구간의 첫 골짜기 찾기
+        tau = possible[0]
+        # 국소 최솟값 정밀화
+        actual_tau = np.argmin(cmndf[tau:min(tau+20, tau_max)]) + tau
+        
+        # 포물선 보간 (생략 가능하나 정확도를 위해 유지)
+        if 0 < actual_tau < tau_max - 1:
+            y0, y1, y2 = cmndf[actual_tau-1:actual_tau+2]
+            denom = 2*y1 - y0 - y2
+            p = 0.5 * (y0 - y2) / denom if abs(denom) > 1e-10 else 0
+            return fs / (actual_tau + p)
+        return fs / actual_tau
+        
+    return 0
 
 # Matplotlib plotter
 class MatplotlibPlotter(PrintHandler):
@@ -178,10 +385,20 @@ class MatplotlibPlotter(PrintHandler):
                 break
         
         if buffer:
-            data = np.concatenate(buffer, axis=0)
+            # Collect all data in buffer
+            data = np.concatenate(buffer, axis=0).flatten()
+            
+            # Energy and STFT
             energy = get_energy(data)
-            odf = get_odf(energy)
-            threshold = set_threshold(odf, factor=1.6, offset=0.1, window_size=20)
+            # self.prtwl("ENERGY:", energy.shape)
+            
+            f, t, zxx = stft(energy, nperseg=4096)
+            # if f[0] > 0:
+            # self.prtwl("STFT:", f.shape, zxx.shape)
+                
+            # Onset Detection
+            odf = get_odf(zxx)
+            threshold = set_threshold(odf, factor=1.2, offset=0.1, window_size=20)
             
             try:
                 # Onset Detection
@@ -191,70 +408,52 @@ class MatplotlibPlotter(PrintHandler):
                     total_segms=odf.shape[0],
                     blocksize=self.blocksize
                     )
+                
+                # Onset filtering in this block
                 final_onsets = merge_onsets_by_strength(
                     onset_frames, onset_strengths,
                     sr=self.samplerate,
                 )
                 
-                # If onsets,
-                if len(final_onsets) > 0:
-                    self.prtwl(final_onsets)
-                    # Measure distance from last to current onset
-                    if self.last_onsets.size > 0:
-                        prev_onset = self.last_onsets[-1]
-                        curr_onset = final_onsets[0] + self.total_frames
-                        distance = curr_onset - prev_onset
-                        if distance < 10000:
-                            self.prtwl("Distance: ", distance, f"= Curr {curr_onset} - Last {prev_onset}")
-                    self.last_onsets = final_onsets + self.total_frames
+                # Onset filtering between last and current block
+                current_onset_frames, self.last_onsets = validate_first_onset_connecting_last_onset(
+                    current_onset_frames=final_onsets,
+                    last_onset_frames=self.last_onsets,
+                    total_frames=self.blocksize,
+                    sr=self.samplerate
+                )
                 
-                # peaks_over_threshold = (odf > threshold).astype(int)
-                # onset_segm = np.where(np.diff(peaks_over_threshold) > 0)[0]
-                
-                # if len(onset_segm) > 0:
-                #     # self.prtwl("Onset segm.:", onset_segm, "/ Total segm.: ", odf.shape[0])
-                
-                #     # All onsets are same from 1st onset to +20ms(~882frames)
-                #     onset_frame = np.round(onset_segm / odf.shape[0] * data.shape[0]).astype(int)
-                #     self.prtwl("Onset frame:", onset_frame, "/ Total frame: ", odf.shape[0] * data.shape[0])
+                if current_onset_frames.size > 0:
+                    self.prtwl("ONSET:", current_onset_frames)
+                    
+                    # If onset, Pitch Detection
+                    DOWNSAMPLING_FACTOR = 2
+                    downsampled_data = decimate(data, DOWNSAMPLING_FACTOR)
+                    downsampled_sr = self.samplerate / DOWNSAMPLING_FACTOR
+                    pitch = ultra_fast_yin(
+                        downsampled_data, downsampled_sr,
+                        threshold=0.7)
+                    if pitch > 0:
+                        self.prtwl("PITCH:", pitch)
 
-                
-                
-                #     # Convert into current onset frame: total + 1st onset
-                #     onset_frame = round(onset_segm[0] / odf.shape[0] * data.shape[0])
-                #     current_onset_frame = self.total_frames + onset_frame
-                    
-                #     # Measure distance from last onset
-                #     distance = current_onset_frame - self.last_onset_frame
-                    
-                #     # Avoid duplicated onset within 50 centiseconds (2205 samples at 44100 Hz)
-                #     if distance <= 2205:
-                #         raise Exception(f"Distance {distance} = Curr {current_onset_frame} - Last {self.last_onset_frame}...")
-                #     self.last_onset_frame = current_onset_frame
-                    
-                
+            # If CPU too much overloaded, this block will be ignored.
             except ValueError:
-                onset_segm = []
                 self.prtwl("Too much shrinken shape. It seems CPU was overloaded. Discarding onset detection for this frame.")
             
+            # For other exceptions
             except Exception as e:
-                # onset_segm = []
-                self.prtwl("Same onset detection on border: \n\t", str(e), onset_segms)
+                self.prtwl("Unexpected exception:", e)
 
+            # Anyway, counting this num of frames in the end of callback
             finally:
                 self.total_frames += data.shape[0]
                 
-            
-            # if (data.max() > 0.01) & (data.max() < 0.03):
-                # data = data * 10
-            
+
             # Update plot array
             try:
                 self.plot_array[: -len(data)] = self.plot_array[len(data):]
                 self.plot_array[-len(data):] = data.reshape((-1,))
                 
-                # self.dots_array[: -len(data)] = self.dots_array[len(data):]
-                # self.dots_array[-len(data):] = 
             except ValueError as e:
                 self.prtwl("ValueError in plot update:", str(e))
                 
