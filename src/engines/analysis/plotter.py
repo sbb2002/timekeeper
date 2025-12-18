@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import queue
 import numpy as np
 import matplotlib.pyplot as plt
@@ -143,8 +145,11 @@ def validate_first_onset_connecting_last_onset(current_onset_frames, last_onset_
     return current_onset_frames, last_total_onset_frames
 
 def get_distance_frames_for_temporal_resolution(sr=44100):
-    TEMPORAL_RESOLUTION = 20    # ms
-    return round(sr * TEMPORAL_RESOLUTION / 1000)
+    TEMPORAL_RESOLUTION = 20    # 20ms
+    bpm = 60
+    # return round(sr * TEMPORAL_RESOLUTION / 1000)
+    return round(sr * 60 / bpm / 4)
+
 
 # Pitch Detection
 def get_refined_pitch(f, zxx, sr):
@@ -398,7 +403,7 @@ class MatplotlibPlotter(PrintHandler):
                 
             # Onset Detection
             odf = get_odf(zxx)
-            threshold = set_threshold(odf, factor=1.2, offset=0.1, window_size=20)
+            threshold = set_threshold(odf, factor=1.1, offset=0.03, window_size=20)
             
             try:
                 # Onset Detection
@@ -432,7 +437,7 @@ class MatplotlibPlotter(PrintHandler):
                     downsampled_sr = self.samplerate / DOWNSAMPLING_FACTOR
                     pitch = ultra_fast_yin(
                         downsampled_data, downsampled_sr,
-                        threshold=0.7)
+                        threshold=0.8)
                     if pitch > 0:
                         self.prtwl("PITCH:", pitch)
 

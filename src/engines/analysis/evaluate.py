@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import librosa
 import queue
 import threading
