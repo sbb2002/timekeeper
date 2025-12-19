@@ -11,3 +11,13 @@ Onset Detection, Pitch Detection을 구현했다.
 4.  5번줄 A튜닝 개방현으로 쳤을 때 A4(440Hz)가 잡혀야한다. 실제로는 A2(110Hz)가 포착된다. 모든 줄에 관해서 낮은 음의 배음이 우선적으로 잡혀버린다.
 
 위의 사항들에 대해 다시 고민할 필요가 있다.
+
+---
+
+# TODO
+1. Adaptive Threshold - Onset, Pitch detection할 때 자동설정
+    - Onset: data' RMS mean in bgnoise * weight
+    - Pitch: CMNDF depth based "Confidence Score"
+2. Onset control - temporal resolution이 아닌 시간 및 볼륨크기를 이용
+    - Temporal cooldown: BPM & subnote의 단위를 활용해서 첫 onset이후 그 시간동안 onset은 인정x
+    - Energy peak envelope: decay하는 성질을 이용해 temporal cooldown이 만족되어도 < 0.7 * onset vol이면 인정x

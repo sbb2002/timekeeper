@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
@@ -8,7 +9,7 @@ from scipy.signal import stft, decimate
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
 
 from common.handler import PrintHandler
-
+from engines.audio.metronome import NoteSoundMaker
 
 # Energy
 def get_energy(buffer):
@@ -295,6 +296,8 @@ def fast_yin(data, fs, threshold=0.15):
 def ultra_fast_yin(data, fs, threshold=0.15):
     # 1. 1차원 보장 및 가벼운 전처리
     data = np.asarray(data).flatten()
+    data = data / np.max(np.abs(data))  # Waveform normalization
+    
     N = len(data)
     tau_max = N // 2
     
@@ -347,12 +350,40 @@ def ultra_fast_yin(data, fs, threshold=0.15):
         
     return 0
 
+def hz_to_note(hz):
+    if hz <= 0:
+        return None, 0
+    
+    # 1. A4(440Hz) 기준으로 몇 반음 떨어져 있는지 계산
+    # n = 0 이면 A4, n = -12 이면 A3, n = -24 이면 A2(110Hz)
+    n = 12 * math.log2(hz / 440.0)
+    
+    # 2. 반올림하여 가장 가까운 음의 인덱스 찾기
+    n_rounded = round(n)
+    
+    # 3. 튜닝 오차(Cents) 계산 (1반음 = 100센트)
+    cents = int((n - n_rounded) * 100)
+    
+    # 4. 음 이름과 옥타브 결정
+    notes = ['A', 'A#', 'B', 'C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#']
+    
+    # 옥타브와 노트 이름 매핑
+    # A4는 notes[0]이고 octave=4임
+    note_name = notes[n_rounded % 12]
+    # 12로 나눈 몫을 이용해 옥타브 계산 (A4 기준으로 보정)
+    octave = (n_rounded + 9) // 12 + 4
+    
+    return f"{note_name}{octave}", cents
+
+
 # Matplotlib plotter
 class MatplotlibPlotter(PrintHandler):
-    def __init__(self, data, samplerate, blocksize, duration=5):
+    def __init__(self, data, bpm, denominator, samplerate, blocksize, duration=5):
         
         # Arguments
         self.data = data
+        self.bpm = bpm
+        self.denominator = denominator
         self.samplerate = samplerate
         self.blocksize = blocksize
         self.duration = duration
@@ -363,10 +394,21 @@ class MatplotlibPlotter(PrintHandler):
         self.plot_array = np.zeros(self.xlim, dtype=np.float32)
         # self.dots_array = np.zeros(self.xlim, dtype=np.float32)
         
-        # Debug
+        # Onset
         self.total_frames = np.int64(0)
         self.last_onsets = np.array([])
+        self.abs_last_onset_frame = 0
 
+        # Timing Note Standard
+        self.notemaker = NoteSoundMaker(
+            note_denominator=denominator,
+            level=3,
+            bpm=bpm,
+            samplerate=samplerate,
+            blocksize=blocksize
+        )
+
+        # Initialize plot
         self.initialize()
         
         self.ani = FuncAnimation(
@@ -429,7 +471,7 @@ class MatplotlibPlotter(PrintHandler):
                 )
                 
                 if current_onset_frames.size > 0:
-                    self.prtwl("ONSET:", current_onset_frames)
+                    # self.prtwl("ONSET:", current_onset_frames)
                     
                     # If onset, Pitch Detection
                     DOWNSAMPLING_FACTOR = 2
@@ -439,7 +481,27 @@ class MatplotlibPlotter(PrintHandler):
                         downsampled_data, downsampled_sr,
                         threshold=0.8)
                     if pitch > 0:
-                        self.prtwl("PITCH:", pitch)
+                        # Pitch to Note
+                        note, cent = hz_to_note(pitch)
+                        
+                        # Timing check; distance of frame converts into time[ms]
+                        absolute_current_onset = current_onset_frames + self.total_frames
+                        absolute_last_onset = 0 if self.abs_last_onset_frame == 0 else self.abs_last_onset_frame
+                        # self.prtwl(absolute_current_onset, absolute_last_onset)
+                        self.abs_last_onset_frame = absolute_current_onset
+                        
+                        distance = absolute_current_onset - absolute_last_onset
+                        distance = distance[0] / self.samplerate * 1000
+                        
+                        # Judge timing quality (quadruplet)
+                        ONBEAT_TOLERANCE = 60 / self.bpm / 1 * 1000
+                        timing_err = abs(distance - ONBEAT_TOLERANCE)
+                        score = "PERFECT" if timing_err <= 10 \
+                            else "GREAT" if timing_err <= 25 \
+                            else "GOOD" if timing_err <= 50 \
+                            else "BAD"
+                        
+                        self.prtwl(f"TIMING: {distance:.1f}ms ({score})", "PITCH:", note, f"({cent})")
 
             # If CPU too much overloaded, this block will be ignored.
             except ValueError:
