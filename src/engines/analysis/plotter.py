@@ -399,15 +399,6 @@ class MatplotlibPlotter(PrintHandler):
         self.last_onsets = np.array([])
         self.abs_last_onset_frame = 0
 
-        # Timing Note Standard
-        self.notemaker = NoteSoundMaker(
-            note_denominator=denominator,
-            level=3,
-            bpm=bpm,
-            samplerate=samplerate,
-            blocksize=blocksize
-        )
-
         # Initialize plot
         self.initialize()
         
@@ -494,7 +485,7 @@ class MatplotlibPlotter(PrintHandler):
                         distance = distance[0] / self.samplerate * 1000
                         
                         # Judge timing quality (quadruplet)
-                        ONBEAT_TOLERANCE = 60 / self.bpm / 1 * 1000
+                        ONBEAT_TOLERANCE = 60 / self.bpm / self.denominator * 1000
                         timing_err = abs(distance - ONBEAT_TOLERANCE)
                         score = "PERFECT" if timing_err <= 10 \
                             else "GREAT" if timing_err <= 25 \
