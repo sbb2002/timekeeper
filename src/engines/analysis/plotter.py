@@ -9,23 +9,22 @@ from scipy.signal import stft, decimate
 from scipy.ndimage import maximum_filter1d, uniform_filter1d
 
 from common.handler import PrintHandler
-from engines.audio.metronome import NoteSoundMaker
+
 
 # Energy
 def get_energy(buffer):
+    '''buffer(np.array[N,]) -> energy(np.array[N,])'''
     return np.sqrt(buffer ** 2)
 
 # Onset Detection
 def get_odf(zxx):
-    ## 1) STFT
-    # _, _, zxx = stft(energy.reshape((-1,)))
-    
-    ## 2) Magnitude & phase
+
+    ## Magnitude & phase
     mag = np.abs(zxx)
     phase = np.angle(zxx)
     # self.prtwl("STFT MAG:", mag.shape)
     
-    ## 3) Onset Detecting by mag
+    ## Onset Detecting by mag
     prev_mag = mag[:, :-1]
     curr_mag = mag[:, 1:]
     
@@ -33,7 +32,7 @@ def get_odf(zxx):
     halfwave_rectified = np.maximum(0, diff_mag)
     spectral_flux = np.sum(halfwave_rectified, axis=0)
     
-    ## 4) Onset Detecting by phase
+    ## Onset Detecting by phase
     prev_phase = phase[:, :-1]
     curr_phase = phase[:, 1:]
     
@@ -43,7 +42,7 @@ def get_odf(zxx):
     
     odf_phase = np.sum(weigthed_phase_deviation, axis=0)
     
-    ## 5) Combined Onset Detecting Function
+    ## Combined Onset Detecting Function
     odf = spectral_flux + odf_phase
     
     return odf
@@ -424,46 +423,21 @@ class MatplotlibPlotter(PrintHandler):
         
         if buffer:
             # Collect all data in buffer
-            data = np.concatenate(buffer, axis=0).flatten()
-            
+            data = np.concatenate(buffer, axis=0).flatten()     # [frames,]
+
             # Energy and STFT
-            energy = get_energy(data)
-            # self.prtwl("ENERGY:", energy.shape)
-            
-            f, t, zxx = stft(energy, nperseg=4096)
-            # if f[0] > 0:
-            # self.prtwl("STFT:", f.shape, zxx.shape)
-                
-            # Onset Detection
-            odf = get_odf(zxx)
+            energy = get_energy(data)       # [frames,]
+            f, t, zxx = stft(energy, nperseg=4096)      # [freq=nperseg // 2 + 1, time segment=floor((frames+pad)/(nperseg-noverlap) + 1)]
+
+            # Onset Detection Function
+            odf = get_odf(zxx)      # [freq, seg-1]
             threshold = set_threshold(odf, factor=1.1, offset=0.03, window_size=20)
             
             try:
                 # Onset Detection
-                onset_segms, onset_strengths = detect_onset(odf, threshold)
-                onset_frames = convert_segms_into_frames(
-                    onset_segms,
-                    total_segms=odf.shape[0],
-                    blocksize=self.blocksize
-                    )
-                
-                # Onset filtering in this block
-                final_onsets = merge_onsets_by_strength(
-                    onset_frames, onset_strengths,
-                    sr=self.samplerate,
-                )
-                
-                # Onset filtering between last and current block
-                current_onset_frames, self.last_onsets = validate_first_onset_connecting_last_onset(
-                    current_onset_frames=final_onsets,
-                    last_onset_frames=self.last_onsets,
-                    total_frames=self.blocksize,
-                    sr=self.samplerate
-                )
-                
+                current_onset_frames, self.last_onsets = self._onset_detection(odf, threshold)
                 if current_onset_frames.size > 0:
-                    # self.prtwl("ONSET:", current_onset_frames)
-                    
+
                     # If onset, Pitch Detection
                     DOWNSAMPLING_FACTOR = 2
                     downsampled_data = decimate(data, DOWNSAMPLING_FACTOR)
@@ -536,4 +510,41 @@ class MatplotlibPlotter(PrintHandler):
         self.ax.set_ylim(-1.0, 1.0)
         # self.ax.set_xlim(0, )
         
-    
+    def _onset_detection(self, odf, threshold):
+        # Onset Detection
+        onset_segms, onset_strengths = detect_onset(odf, threshold)     # [seg_ix], [seg_val]
+        onset_frames = convert_segms_into_frames(
+            onset_segms,
+            total_segms=odf.shape[0],
+            blocksize=self.blocksize
+            )   # [seg]
+        
+        # Onset filtering in this block
+        final_onsets = merge_onsets_by_strength(
+            onset_frames, onset_strengths,
+            sr=self.samplerate,
+        )       # [seg]
+        
+        # Onset filtering between last and current block
+        current_onset_frames, last_onsets = validate_first_onset_connecting_last_onset(
+            current_onset_frames=final_onsets,
+            last_onset_frames=self.last_onsets,
+            total_frames=self.blocksize,
+            sr=self.samplerate
+        )       # [seg]
+
+        return current_onset_frames, last_onsets
+
+    def _pitch_detection(self):
+        # If onset, Pitch Detection
+        DOWNSAMPLING_FACTOR = 2
+        downsampled_data = decimate(data, DOWNSAMPLING_FACTOR)
+        downsampled_sr = self.samplerate / DOWNSAMPLING_FACTOR
+        pitch = ultra_fast_yin(
+            downsampled_data, downsampled_sr,
+            threshold=0.8)
+        if pitch > 0:
+            # Pitch to Note
+            note, cent = hz_to_note(pitch)
+            
+        return note, cent
