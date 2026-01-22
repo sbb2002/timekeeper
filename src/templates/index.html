@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chromatic Practice</title>
+    <title>Time Keeper</title>
     <style>
         * {
             margin: 0;
@@ -250,13 +250,23 @@
             background: #f44336;
             color: #fff;
         }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background-color: #ccc;
+        }
+
+        button:enabled {
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
     
     <div class="container">
-        <h1>Chromatic Practice</h1>
+        <h1>Time Keeper</h1>
 
         <div class="section">
             <div class="section-title">Settings</div>
@@ -303,7 +313,7 @@
 
             <div class="controls">
                 <button class="btn btn-start" onclick="start()">Start</button>
-                <button class="btn btn-stop" onclick="stop()">Stop</button>
+                <button class="btn btn-stop" onclick="stop()" disabled>Stop</button>
             </div>
         </div>
 
@@ -320,8 +330,8 @@
         <div class="section">
             <div class="section-title">Detection Result</div>
             <div class="detection-result">
-                <div class="note-display" id="noteDisplay">--</div>
-                <div class="cents-display" id="centsDisplay">-- cents</div>
+                <!-- <div class="note-display" id="noteDisplay">--</div> -->
+                <!-- <div class="cents-display" id="centsDisplay">-- cents</div> -->
                 <div class="timing-display" id="timingDisplay">Waiting...</div>
             </div>
         </div>
@@ -339,6 +349,11 @@
         }
 
         function start() {
+
+            // 버튼 상태 변경
+            document.querySelector('.btn-start').disabled = true;
+            document.querySelector('.btn-stop').disabled = false;
+
             const settings = {
                 bpm: parseInt(document.getElementById('bpm').value),
                 beatTop: parseInt(document.getElementById('beatTop').value),
@@ -355,6 +370,22 @@
         }
 
         function stop() {
+
+            // 버튼 상태 변경
+            document.querySelector('.btn-start').disabled = false;
+            document.querySelector('.btn-stop').disabled = true;
+
+            // Beat indicator 초기화 (모든 불 끄기)
+            const beats = document.querySelectorAll('.beat');
+            beats.forEach(beat => {
+                beat.classList.remove('active');
+            });
+            
+            // Timing display 초기화
+            const timingDisplay = document.getElementById('timingDisplay');
+            timingDisplay.textContent = 'Waiting...';
+            timingDisplay.className = 'timing-display';
+
             console.log('Stop practice');
             socket.emit('stop');
         }
@@ -365,7 +396,7 @@
         });
 
         socket.on('detection_update', (data) => {
-            updateDetection(data.note, data.cents, data.onBeat);
+            updateDetection(data.onBeat);
         });
 
         // 비트 인디케이터 생성
@@ -392,10 +423,10 @@
         }
 
         // 검출 결과 업데이트 예시
-        function updateDetection(note, cents, onBeat) {
-            document.getElementById('noteDisplay').textContent = note;
-            document.getElementById('centsDisplay').textContent = `${cents > 0 ? '+' : ''}${cents} cents`;
-            
+        function updateDetection(onBeat) {
+            // document.getElementById('noteDisplay').textContent = note;
+            // document.getElementById('centsDisplay').textContent = `${cents > 0 ? '+' : ''}${cents} cents`;
+            console.log('Detection update - On beat:', onBeat);
             const timingDisplay = document.getElementById('timingDisplay');
             if (onBeat) {
                 timingDisplay.textContent = '✓ On beat';
