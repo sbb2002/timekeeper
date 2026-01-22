@@ -1,0 +1,17 @@
+2026-01-21  분석스레드로부터 onset, pitch, timing 받아오기
+                ㄴ기존 플로터에 있는 것 떼어내야함
+            받아와서 인디케이터에 업데이트
+                ㄴ비트 인디케이터처럼 일정주기로 결과값 업데이트하기
+            sustain은???
+
+            1) Sustain measure dev.
+                - Adaptive threshold(ML?) w/ Energy decay
+            2) Timing measure dev.
+                - Onset index --> Time 역산
+                - Time vs Beat at time: Subnote step으로 time을 mod처리
+                - 시간차(mod)가 step의 반 이하면 fast, 이상이면 slow
+            3) 분석스레드 중 플로터에서 onset, pitch, timing, sustain 이관
+                - return 값만 있으면 됨
+            4) UI "DETECTION RESULT"에서 onset, pitch, timing, sustain 표시
+                - 디자인 재설계
+                - 업데이트
