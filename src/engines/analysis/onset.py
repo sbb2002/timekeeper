@@ -175,6 +175,7 @@ class OnsetPeakPicker:
                         if i != center_ix)
         return is_peak
 
+
 class OnsetIntervalChecker:
     """
     Picked onsets의 간격을 확인하는 클래스.
@@ -213,7 +214,15 @@ class OnsetIntervalChecker:
         # Interval check
         all(self.onset_buffer) & (self.sec_per_block > self.min_interval)
 
+
 class RhythmSupervisor:
+    """
+    Onset 관련한 클래스들을 총괄하는 클래스.
+
+    여기서 추가적으로 해야할건 Onset Index에 대해 타이밍 차이를 산출하기.
+
+    그리고 이제는 latency 최소화를 위해 블록사이즈를 128로 낮춤.
+    """
     def __init__(
             self,
             target_buffer: queue.Queue,
@@ -246,6 +255,9 @@ class RhythmSupervisor:
             lookahead=lookahead
         )
 
+        # Memory
+        self.block_frames = 0
+
 
     def detect(self, audio_frames: np.ndarray):
 
@@ -259,6 +271,8 @@ class RhythmSupervisor:
 
         try:
             audio_frames = self.target_buffer.get_nowait()
+            self.block_frames += audio_frames.shape[0]
+
             # print(audio_frames.shape)
             is_peak = self.detect(audio_frames)
 

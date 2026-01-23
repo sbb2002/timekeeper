@@ -12,7 +12,7 @@ class AppOrchestrator:
         
         self.socketio_obj = socketio_obj
         self.samplerate = 44100
-        self.blocksize = 1024
+        self.blocksize = 128
 
         # Settings
         self.current_settings = {
@@ -59,7 +59,7 @@ class AppOrchestrator:
             subnote_denominator=subnote_denominator,
             samplerate=self.samplerate,
             flux_ratio_threshold=0.2,
-            peak_threshold=0.7
+            peak_threshold=0.2
         )
 
         self.supervisor.process_rhythm(self.socketio_obj)
