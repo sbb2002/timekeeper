@@ -32,3 +32,6 @@
                 - Stop을 누를 경우 이 클래스도 GC할 것
 
             2) Onset Queue
+
+![image](pictures\20260123_160302.jpg)
+![image](pictures\20260123_160313.jpg)
