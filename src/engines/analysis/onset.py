@@ -1,10 +1,12 @@
 from __future__ import annotations
 from typing import Tuple
 
+import bisect
 import queue
 import threading
 import numpy as np
 from scipy import signal
+from collections import deque
 
 class OnsetDetector:
     """
@@ -215,6 +217,111 @@ class OnsetIntervalChecker:
         all(self.onset_buffer) & (self.sec_per_block > self.min_interval)
 
 
+class RhythmChecker:
+    """
+        1) 타이밍 검출 윈도우(W = 1/4 * ss)만큼 오디오 프레임 샘플 수집
+        2) 가장 빠른 onset picking
+        3) onset ~ window_centroid 비교
+        4) 판정 및 업데이트
+    """
+    def __init__(self, 
+                 samplerate: int = 44100,
+                 blocksize: int = 128,
+                 bpm: int = 60,
+                 note_denominator: int = 4,
+                 subnote_denominator: int = 4,
+                 ):
+        
+        # Arguments
+
+        # Constants
+        SS_THRESHOLD = 0.25
+        W_FAST = 0.8
+        W_LATE = 1.0
+
+        # Info
+        sec_per_note = 60 / bpm
+        note_per_subnote = 4 / subnote_denominator
+        samples_per_subnote = sec_per_note * note_per_subnote * samplerate
+        block_per_subnote = samples_per_subnote / blocksize
+        sec_per_block = blocksize / samplerate
+
+        self.ss = samples_per_subnote
+        self.bs = block_per_subnote
+        self.sb = sec_per_block
+
+        w_uni = block_per_subnote * SS_THRESHOLD
+        w_fast = w_uni * W_FAST
+        w_late = w_uni * W_LATE
+        self.W = int(w_fast + w_late)       # 38 blocks per window
+
+        # Memory
+        self.current_subnote = 0
+        self.current_block = 0
+        self.dq = deque(maxlen=self.W + 1)  # windowsize + 여유분
+
+        
+    def process(self, onset: bool):
+        
+        # Test
+        print(self.current_block)
+        print(self.current_subnote)
+
+        # Collect onsets
+        self._collect_onset(onset)
+        
+        # If current block has subnote timing
+        prev_blk_ix = self.current_block - self.W
+        curr_blk_ix = self.current_block
+        onbeat_blk_ix = self.current_subnote * self.bs
+
+        if prev_blk_ix < onbeat_blk_ix < curr_blk_ix:
+            
+            # Pick the fastest onset
+            first_onset_blk_ix = self._find_first_onset(self.dq)
+            if first_onset_blk_ix is not None:
+                current_onset_blk_ix = first_onset_blk_ix + self.current_block
+                
+                # Time differential
+                diff_blk = onbeat_blk_ix - current_onset_blk_ix
+                diff_sec = diff_blk * self.sb
+
+                # Judge the Quality of Timing as grade
+                grade = self._measure_groove(diff_sec)
+                print("Grade: ", grade, " // " , diff_sec, "sec")
+
+                # Count current subnote
+                self.current_subnote += 1
+
+    def _collect_onset(self, onset: bool):
+
+        try:
+            # Append the Onset-Per-Block on deque
+            self.dq.append(onset)
+
+            # Count current block
+            self.current_block += 1
+
+        except Exception as e:
+            print(e)
+
+    def _find_first_onset(self, dq):
+        return next((i for i, v in enumerate(dq) if v), None)
+    
+    def _measure_groove(self, diff_sec):
+        return TimingJudge.judge(diff_sec)
+
+class TimingJudge:
+    # 클래스 변수로 한 번만 정의
+    THRESHOLDS = [0.002, 0.005, 0.010, 0.020]
+    GRADES = ["PERFECT", "GREAT", "GOOD", "BAD", "MISS"]
+    
+    @classmethod
+    def judge(cls, time_diff):
+        abs_diff = abs(time_diff)
+        index = bisect.bisect_left(cls.THRESHOLDS, abs_diff)
+        return cls.GRADES[index]
+
 class RhythmSupervisor:
     """
     Onset 관련한 클래스들을 총괄하는 클래스.
@@ -243,7 +350,7 @@ class RhythmSupervisor:
         # Buffer targeting
         self.target_buffer = target_buffer
 
-        # Detector & Picker instances
+        # Instances
         self.onset_detector = OnsetDetector(
             sr=samplerate,
             hop_length=hop_length,
@@ -254,10 +361,10 @@ class RhythmSupervisor:
             lookback=lookback,
             lookahead=lookahead
         )
+        self.rhythm_checker = RhythmChecker()
 
         # Memory
         self.block_frames = 0
-
 
     def detect(self, audio_frames: np.ndarray):
 
@@ -270,20 +377,27 @@ class RhythmSupervisor:
     def process_rhythm(self, socketio_obj=None):
 
         try:
+            # 매 오디오 프레임(blocksize=128)이 들어옴
             audio_frames = self.target_buffer.get_nowait()
             self.block_frames += audio_frames.shape[0]
 
-            # print(audio_frames.shape)
+            # 피크 검출
             is_peak = self.detect(audio_frames)
+            self.rhythm_checker.process(is_peak)
+
+            # 타이밍 판정
+
+            print("Peak: ", is_peak)
+            # 타이밍 검출
 
             if socketio_obj is not None:
-                print(is_peak)
                 socketio_obj.emit(
                     'detection_update', {
                         'onBeat': is_peak
                     }
                 )
 
+            # 추후 업데이트 주기를 모니터 주시율로 바꿔야할 듯.
             self.schedule = threading.Timer(
                 self.min_interval, self.process_rhythm, args=(socketio_obj,))
             self.schedule.start()
