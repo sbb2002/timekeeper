@@ -71,25 +71,21 @@ class RhythmChecker:
         # IV 3: Subnote Sample Range
         RANGE_THRESHOLD = 0.3
         boundary = self._subnote_samp_ix_unit * RANGE_THRESHOLD
-        print("UNIT:", self._subnote_samp_ix_unit, boundary)
+        # print("UNIT:", self._subnote_samp_ix_unit, boundary)
 
         self._subnote_samp_init = ceil(self._subnote_samp_ix - boundary)
         self._subnote_samp_fin = floor(self._subnote_samp_ix + boundary)
         self._subnote_samp_range = (self._subnote_samp_init, self._subnote_samp_fin)
-        print("SAM RANGE:", self._subnote_samp_range)
+        # print("SAM RANGE:", self._subnote_samp_range)
 
         # IV 4: Subnote Block Range
         self._subnote_blk_range_init = ceil(self._subnote_samp_range[0] / self.blk_size)
         self._subnote_blk_range_fin = floor(self._subnote_samp_range[1] / self.blk_size)
         self._subnote_blk_range = (self._subnote_blk_range_init, self._subnote_blk_range_fin)
-        print("BLK RANGE:", self._subnote_blk_range)
+        # print("BLK RANGE:", self._subnote_blk_range)
 
         print("SUBNOTE:", self.n_subnote)
-        if hasattr(self, 'dq_onset'):
-            print("DQ:", self.dq_onset)
-        else:
-            print("INITIALIZING")
-        print("UPDATED\n")
+        # print("UPDATED")
 
     def process(self, onset_info: tuple[bool, int]):
         """
@@ -139,7 +135,7 @@ class RhythmChecker:
 
             # Get ist onset
             curr_onset_blk_dqix, curr_onset_blk_ix = self._find_first_onset()
-            print("DETECTED ONSET:", curr_onset_blk_ix)
+            # print("DETECTED ONSET:", curr_onset_blk_ix)
 
             if curr_onset_blk_ix is not None:
 
@@ -150,15 +146,18 @@ class RhythmChecker:
                 # Measure the time differential
                 delta_samp_ix = curr_onset_samp_ix - self._subnote_samp_ix
                 delta_t = self._convert_six_into_sec(delta_samp_ix, milli_timeunit=True)    # [ms]
-                print("DELTA SAMP IX:", delta_samp_ix)
+                print("DELTA IX:", f"{delta_samp_ix}(SAMP) / {delta_samp_ix//self.blk_size}(BLK)")
 
                 # Grade delta_t
                 grade = TimingJudge.judge(delta_t)
 
                 # Stack history
                 self._stack_history(delta_t, grade, curr_onset_t, self.n_subnote)
-                print("DEBUG DQ ONSET:", curr_onset_blk_dqix)
-                print("DEBUG:", self._debug_process, "\n")
+                print("DQ ONSET:", curr_onset_blk_ix)
+                print("ON BEAT:", self._subnote_samp_ix // self.blk_size)
+                print("RESULT:", self._report_this, "\n")
+                # if hasattr(self, 'dq_onset'):
+                    # print(f"DQ(n_subnote={self.n_subnote}):", self.dq_onset)
 
             # Iterate n_subnote and initialize deque
             self.n_subnote += 1
@@ -222,7 +221,7 @@ class RhythmChecker:
         self.hist_results['subnote'].append(subnote)
 
     @property
-    def _debug_process(self):
+    def _report_this(self):
         return {k: v[-1] for k, v in self.hist_results.items()}
 
 
